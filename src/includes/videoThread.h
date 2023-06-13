@@ -9,13 +9,10 @@
 #define VIDEOTHREAD_H_
 
 #include <gst/gst.h>
+#include <stdbool.h>
 
 gboolean link_elements_with_filter (GstElement *element1, GstElement *element2, GstCaps *caps);
-bool setVideoTask( streamerTask_t task, int UDPport, char * pText, int cameraCard);
-streamerTask_t getVideoTask();
-bool setVideoText ( char * newText);
-bool videoIsStopped ( void);
-
+GstElement * startReceiving( int UDPport, char * pText);
 
 
 typedef enum {

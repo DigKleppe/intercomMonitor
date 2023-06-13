@@ -14,6 +14,8 @@
 
 #include "intercomMonitor.h"
 
+void start (void);
+
 pthread_t videoBaseThreadID;
 pthread_t videoFloor1hreadID;
 
@@ -110,7 +112,8 @@ int main(int argc, char *argv[]) {
 	  /* Initialize GStreamer */
 	  gst_init (&argc, &argv);
 
-	initScreen();
+	start();
+//	initScreen();
 
 //
 //	/* Initialize GStreamer */
