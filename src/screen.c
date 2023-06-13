@@ -1,336 +1,124 @@
-/*
- * screen.c
+/**
+ * GNOME/GTK+ Menu Demo Application using a GtkApplication class
  *
- *  Created on: Jun 9, 2023
- *      Author: dig
+ * M. Horauer
  */
-
-#include <string.h>
-
 #include <gtk/gtk.h>
+#include <glib.h>
+#include <glib/gprintf.h>
 
-#include <gst/video/videooverlay.h>
+typedef struct {
+  GtkWidget *greeterlabel;
+  GtkWidget *namelabel;
+  GtkWidget *nameentry;
+  GtkWidget *enterbutton;
+  GtkWidget *clearbutton;
+} appWidgets;
 
-#include <gdk/gdk.h>
-#if defined (GDK_WINDOWING_X11)
-#include <gdk/gdkx.h>
-#elif defined (GDK_WINDOWING_WIN32)
-#include <gdk/gdkwin32.h>
-#elif defined (GDK_WINDOWING_QUARTZ)
-#include <gdk/gdkquartz.h>
-#endif
+/***************************************************************** PROTOTYPES */
+void enter_callback(GSimpleAction *action, GVariant *parameter, gpointer data);
+void clear_callback(GSimpleAction *action, GVariant *parameter, gpointer data);
+void entry_callback(GtkWidget *widget, gpointer data);
 
-/* Structure to contain all our information, so we can pass it around */
-typedef struct _CustomData {
-  GstElement *playbin;           /* Our one and only pipeline */
+/****************************************************************** CALLBACKS */
+void enter_callback(GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+  const gchar *name;
+  gchar str[50];
+  appWidgets *wid = (appWidgets*)data;
 
-  GtkWidget *streams_list;        /* Text widget to display info about the streams */
+  name = gtk_entry_get_text(GTK_ENTRY(wid->nameentry));
+  g_sprintf(str,"Hello %s!",name);
+  gtk_widget_override_font(wid->greeterlabel,
+                           pango_font_description_from_string("Tahoma 20"));
+  gtk_label_set_text(GTK_LABEL(wid->greeterlabel),(const gchar *)str);
 
-  GstState state;                 /* Current state of the pipeline */
-  gint64 duration;                /* Duration of the clip, in nanoseconds */
-} CustomData;
-
-/* This function is called when the GUI toolkit creates the physical window that will hold the video.
- * At this point we can retrieve its handler (which has a different meaning depending on the windowing system)
- * and pass it to GStreamer through the VideoOverlay interface. */
-static void realize_cb (GtkWidget *widget, CustomData *data) {
-  GdkWindow *window = gtk_widget_get_window (widget);
-  guintptr window_handle;
-
-  if (!gdk_window_ensure_native (window))
-    g_error ("Couldn't create native window needed for GstVideoOverlay!");
-
-  /* Retrieve window handler from GDK */
-#if defined (GDK_WINDOWING_WIN32)
-  window_handle = (guintptr)GDK_WINDOW_HWND (window);
-#elif defined (GDK_WINDOWING_QUARTZ)
-  window_handle = gdk_quartz_window_get_nsview (window);
-#elif defined (GDK_WINDOWING_X11)
-  window_handle = GDK_WINDOW_XID (window);
-#endif
-  /* Pass it to playbin, which implements VideoOverlay and will forward it to the video sink */
-  gst_video_overlay_set_window_handle (GST_VIDEO_OVERLAY (data->playbin), window_handle);
+  name = NULL;
+  wid = NULL;
 }
 
-/* This function is called when the main window is closed */
-static void delete_event_cb (GtkWidget *widget, GdkEvent *event, CustomData *data) {
-   gtk_main_quit ();
+void clear_callback(GSimpleAction *action, GVariant *parameter, gpointer data)
+{
+  appWidgets *wid = (appWidgets*)data;
+
+  gtk_label_set_text(GTK_LABEL(wid->greeterlabel),"Greeter Demo");
+  gtk_entry_set_text(GTK_ENTRY(wid->nameentry),"");
+
+  wid = NULL;
 }
 
-/* This function is called everytime the video window needs to be redrawn (due to damage/exposure,
- * rescaling, etc). GStreamer takes care of this in the PAUSED and PLAYING states, otherwise,
- * we simply draw a black rectangle to avoid garbage showing up. */
-static gboolean draw_cb (GtkWidget *widget, cairo_t *cr, CustomData *data) {
-  if (data->state < GST_STATE_PAUSED) {
-    GtkAllocation allocation;
+void entry_callback(GtkWidget *widget, gpointer data)
+{
+  enter_callback(NULL,NULL,data);
+}
+/***************************************************************** GUI THREAD */
+static void
+activate(GtkApplication *app, gpointer data)
+{
+  GtkWidget *window;
+  GtkWidget *grid;
+  appWidgets *wid = (appWidgets*)data;
+  // map menu actions to callbacks
+  const GActionEntry app_actions[] = {
+    { "enter", enter_callback, NULL, NULL, NULL },
+    { "clear", clear_callback, NULL, NULL, NULL }
+  };
 
-    /* Cairo is a 2D graphics library which we use here to clean the video window.
-     * It is used by GStreamer for other reasons, so it will always be available to us. */
-    gtk_widget_get_allocation (widget, &allocation);
-    cairo_set_source_rgb (cr, 0, 0, 0);
-    cairo_rectangle (cr, 0, 0, allocation.width, allocation.height);
-    cairo_fill (cr);
-  }
+  // create a window with title, default size and icons
+  window = gtk_application_window_new(app);
+  gtk_window_set_application(GTK_WINDOW (window), GTK_APPLICATION (app));
+  gtk_window_set_title(GTK_WINDOW(window),"GNOME Greeter Demo");
+  gtk_window_set_default_icon_from_file("icon.png", NULL);
+  gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
+  gtk_window_set_resizable(GTK_WINDOW(window),FALSE);
+  grid = gtk_grid_new();
+  gtk_container_add(GTK_CONTAINER(window),grid);
 
-  return FALSE;
+  // create label and entry
+  wid->greeterlabel = gtk_label_new_with_mnemonic("Greeter Demo");
+  gtk_widget_override_font(wid->greeterlabel,
+                           pango_font_description_from_string("Tahoma 20"));
+  gtk_widget_set_size_request(wid->greeterlabel,260,40);
+  gtk_grid_attach(GTK_GRID(grid),wid->greeterlabel,0,0,2,1);
+  wid->namelabel = gtk_label_new_with_mnemonic("Name:");
+  gtk_widget_set_size_request(wid->namelabel,130,40);
+  gtk_grid_attach(GTK_GRID(grid),wid->namelabel,0,1,1,1);
+  wid->nameentry = gtk_entry_new();
+  gtk_widget_set_size_request(wid->nameentry,130,35);
+  gtk_entry_set_placeholder_text(GTK_ENTRY(wid->nameentry),"Muster");
+  gtk_grid_attach(GTK_GRID(grid),wid->nameentry,1,1,1,1);
+  g_signal_connect (G_OBJECT(wid->nameentry), "activate",
+                      G_CALLBACK (entry_callback), (gpointer)wid);
+
+  // create Clear and Enter buttons
+  wid->enterbutton = gtk_button_new_with_label("Enter");
+  gtk_grid_attach(GTK_GRID(grid),wid->enterbutton,1,2,1,1);
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(wid->enterbutton),"app.enter");
+  wid->clearbutton = gtk_button_new_with_label("Clear");
+  gtk_grid_attach(GTK_GRID(grid),wid->clearbutton,0,2,1,1);
+  gtk_actionable_set_action_name(GTK_ACTIONABLE(wid->clearbutton),"app.clear");
+
+  // connect actions with callbacks
+  g_action_map_add_action_entries(G_ACTION_MAP (app), app_actions,
+                                  G_N_ELEMENTS (app_actions), wid);
+
+  gtk_widget_show_all(GTK_WIDGET(window));
 }
 
+/**************************************************************** MAIN THREAD */
+int
+screenMain (int argc, char **argv)
+{
+  GtkApplication *app;
+  int status;
+  appWidgets *wid = g_malloc(sizeof(appWidgets));
 
-/* This creates all the GTK+ widgets that compose our application, and registers the callbacks */
-static void create_ui (CustomData *data) {
-  GtkWidget *main_window;  /* The uppermost window, containing all other windows */
-  GtkWidget *video_window; /* The drawing area where the video will be shown */
-  GtkWidget *main_box;     /* VBox to hold main_hbox and the controls */
-  GtkWidget *main_hbox;    /* HBox to hold the video_window and the stream info text widget */
-
-  main_window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-  g_signal_connect (G_OBJECT (main_window), "delete-event", G_CALLBACK (delete_event_cb), data);
-
-  video_window = gtk_drawing_area_new ();
-  gtk_widget_set_double_buffered (video_window, FALSE);
-  g_signal_connect (video_window, "realize", G_CALLBACK (realize_cb), data);
-  g_signal_connect (video_window, "draw", G_CALLBACK (draw_cb), data);
-
-  data->streams_list = gtk_text_view_new ();
-  gtk_text_view_set_editable (GTK_TEXT_VIEW (data->streams_list), FALSE);
-
-  main_hbox = gtk_box_new (GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_box_pack_start (GTK_BOX (main_hbox), video_window, TRUE, TRUE, 0);
-  gtk_box_pack_start (GTK_BOX (main_hbox), data->streams_list, FALSE, FALSE, 2);
-
-  main_box = gtk_box_new (GTK_ORIENTATION_VERTICAL, 0);
-  gtk_box_pack_start (GTK_BOX (main_box), main_hbox, TRUE, TRUE, 0);
-  gtk_container_add (GTK_CONTAINER (main_window), main_box);
-  gtk_window_set_default_size (GTK_WINDOW (main_window), 640, 480);
-
-  gtk_widget_show_all (main_window);
+  app = gtk_application_new("org.gtk.example",G_APPLICATION_FLAGS_NONE);
+  g_signal_connect(app, "activate", G_CALLBACK(activate), (gpointer)wid);
+  status = g_application_run(G_APPLICATION(app), argc, argv);
+  g_object_unref(app);
+  g_free(wid);
+  wid = NULL;
+  return status;
 }
-
-/* This function is called periodically to refresh the GUI */
-static gboolean refresh_ui (CustomData *data) {
-  gint64 current = -1;
-
-  /* We do not want to update anything unless we are in the PAUSED or PLAYING states */
-  if (data->state < GST_STATE_PAUSED)
-    return TRUE;
-
-  /* If we didn't know it yet, query the stream duration */
-  if (!GST_CLOCK_TIME_IS_VALID (data->duration)) {
-    if (!gst_element_query_duration (data->playbin, GST_FORMAT_TIME, &data->duration)) {
-      g_printerr ("Could not query current duration.\n");
-    } else {
-      /* Set the range of the slider to the clip duration, in SECONDS */
-
-    }
-  }
-  return TRUE;
-}
-
-///* This function is called when new metadata is discovered in the stream */
-//static void tags_cb (GstElement *playbin, gint stream, CustomData *data) {
-//  /* We are possibly in a GStreamer working thread, so we notify the main
-//   * thread of this event through a message in the bus */
-//  gst_element_post_message (playbin,
-//    gst_message_new_application (GST_OBJECT (playbin),
-//      gst_structure_new_empty ("tags-changed")));
-//}
-
-/* This function is called when an error message is posted on the bus */
-static void error_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  GError *err;
-  gchar *debug_info;
-
-  /* Print error details on the screen */
-  gst_message_parse_error (msg, &err, &debug_info);
-  g_printerr ("Error received from element %s: %s\n", GST_OBJECT_NAME (msg->src), err->message);
-  g_printerr ("Debugging information: %s\n", debug_info ? debug_info : "none");
-  g_clear_error (&err);
-  g_free (debug_info);
-
-  /* Set the pipeline to READY (which stops playback) */
-  gst_element_set_state (data->playbin, GST_STATE_READY);
-}
-
-/* This function is called when an End-Of-Stream message is posted on the bus.
- * We just set the pipeline to READY (which stops playback) */
-static void eos_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  g_print ("End-Of-Stream reached.\n");
-  gst_element_set_state (data->playbin, GST_STATE_READY);
-}
-
-/* This function is called when the pipeline changes states. We use it to
- * keep track of the current state. */
-static void state_changed_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  GstState old_state, new_state, pending_state;
-  gst_message_parse_state_changed (msg, &old_state, &new_state, &pending_state);
-  if (GST_MESSAGE_SRC (msg) == GST_OBJECT (data->playbin)) {
-    data->state = new_state;
-    g_print ("State set to %s\n", gst_element_state_get_name (new_state));
-    if (old_state == GST_STATE_READY && new_state == GST_STATE_PAUSED) {
-      /* For extra responsiveness, we refresh the GUI as soon as we reach the PAUSED state */
-      refresh_ui (data);
-    }
-  }
-}
-
-/* Extract metadata from all the streams and write it to the text widget in the GUI */
-static void analyze_streams (CustomData *data) {
-  gint i;
-  GstTagList *tags;
-  gchar *str, *total_str;
-  guint rate;
-  gint n_video, n_audio, n_text;
-  GtkTextBuffer *text;
-
-  /* Clean current contents of the widget */
-  text = gtk_text_view_get_buffer (GTK_TEXT_VIEW (data->streams_list));
-  gtk_text_buffer_set_text (text, "", -1);
-
-  /* Read some properties */
-  g_object_get (data->playbin, "n-video", &n_video, NULL);
-  g_object_get (data->playbin, "n-audio", &n_audio, NULL);
-  g_object_get (data->playbin, "n-text", &n_text, NULL);
-
-  for (i = 0; i < n_video; i++) {
-    tags = NULL;
-    /* Retrieve the stream's video tags */
-    g_signal_emit_by_name (data->playbin, "get-video-tags", i, &tags);
-    if (tags) {
-      total_str = g_strdup_printf ("video stream %d:\n", i);
-      gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-      g_free (total_str);
-      gst_tag_list_get_string (tags, GST_TAG_VIDEO_CODEC, &str);
-      total_str = g_strdup_printf ("  codec: %s\n", str ? str : "unknown");
-      gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-      g_free (total_str);
-      g_free (str);
-      gst_tag_list_free (tags);
-    }
-  }
-
-  for (i = 0; i < n_audio; i++) {
-    tags = NULL;
-    /* Retrieve the stream's audio tags */
-    g_signal_emit_by_name (data->playbin, "get-audio-tags", i, &tags);
-    if (tags) {
-      total_str = g_strdup_printf ("\naudio stream %d:\n", i);
-      gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-      g_free (total_str);
-      if (gst_tag_list_get_string (tags, GST_TAG_AUDIO_CODEC, &str)) {
-        total_str = g_strdup_printf ("  codec: %s\n", str);
-        gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-        g_free (total_str);
-        g_free (str);
-      }
-      if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_CODE, &str)) {
-        total_str = g_strdup_printf ("  language: %s\n", str);
-        gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-        g_free (total_str);
-        g_free (str);
-      }
-      if (gst_tag_list_get_uint (tags, GST_TAG_BITRATE, &rate)) {
-        total_str = g_strdup_printf ("  bitrate: %d\n", rate);
-        gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-        g_free (total_str);
-      }
-      gst_tag_list_free (tags);
-    }
-  }
-
-  for (i = 0; i < n_text; i++) {
-    tags = NULL;
-    /* Retrieve the stream's subtitle tags */
-    g_signal_emit_by_name (data->playbin, "get-text-tags", i, &tags);
-    if (tags) {
-      total_str = g_strdup_printf ("\nsubtitle stream %d:\n", i);
-      gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-      g_free (total_str);
-      if (gst_tag_list_get_string (tags, GST_TAG_LANGUAGE_CODE, &str)) {
-        total_str = g_strdup_printf ("  language: %s\n", str);
-        gtk_text_buffer_insert_at_cursor (text, total_str, -1);
-        g_free (total_str);
-        g_free (str);
-      }
-      gst_tag_list_free (tags);
-    }
-  }
-}
-
-/* This function is called when an "application" message is posted on the bus.
- * Here we retrieve the message posted by the tags_cb callback */
-static void application_cb (GstBus *bus, GstMessage *msg, CustomData *data) {
-  if (g_strcmp0 (gst_structure_get_name (gst_message_get_structure (msg)), "tags-changed") == 0) {
-    /* If the message is the "tags-changed" (only one we are currently issuing), update
-     * the stream info GUI */
-    analyze_streams (data);
-  }
-}
-
-
-
-//int main(int argc, char *argv[]) {
-int initScreen (void){
-
-  CustomData data;
-  GstStateChangeReturn ret;
-  GstBus *bus;
-
-//  /* Initialize GTK */
-//  gtk_init (&argc, &argv);
-//
-//  /* Initialize GStreamer */
-//  gst_init (&argc, &argv);
-
-  /* Initialize our data structure */
-  memset (&data, 0, sizeof (data));
-  data.duration = GST_CLOCK_TIME_NONE;
-
-  /* Create the elements */
-  data.playbin = gst_element_factory_make ("playbin", "playbin");
-
-  if (!data.playbin) {
-    g_printerr ("Not all elements could be created.\n");
-    return -1;
-  }
-
-  /* Set the URI to play */
-  g_object_set (data.playbin, "uri", "https://gstreamer.freedesktop.org/data/media/sintel_trailer-480p.webm", NULL);
-
-  /* Connect to interesting signals in playbin */
-//  g_signal_connect (G_OBJECT (data.playbin), "video-tags-changed", (GCallback) tags_cb, &data);
-//  g_signal_connect (G_OBJECT (data.playbin), "audio-tags-changed", (GCallback) tags_cb, &data);
-//  g_signal_connect (G_OBJECT (data.playbin), "text-tags-changed", (GCallback) tags_cb, &data);
-
-  /* Create the GUI */
-  create_ui (&data);
-
-  /* Instruct the bus to emit signals for each received message, and connect to the interesting signals */
-  bus = gst_element_get_bus (data.playbin);
-  gst_bus_add_signal_watch (bus);
-  g_signal_connect (G_OBJECT (bus), "message::error", (GCallback)error_cb, &data);
-  g_signal_connect (G_OBJECT (bus), "message::eos", (GCallback)eos_cb, &data);
-  g_signal_connect (G_OBJECT (bus), "message::state-changed", (GCallback)state_changed_cb, &data);
-  g_signal_connect (G_OBJECT (bus), "message::application", (GCallback)application_cb, &data);
-  gst_object_unref (bus);
-
-  /* Start playing */
-  ret = gst_element_set_state (data.playbin, GST_STATE_PLAYING);
-  if (ret == GST_STATE_CHANGE_FAILURE) {
-    g_printerr ("Unable to set the pipeline to the playing state.\n");
-    gst_object_unref (data.playbin);
-    return -1;
-  }
-
-  /* Register a function that GLib will call every second */
-  g_timeout_add_seconds (1, (GSourceFunc)refresh_ui, &data);
-
-  /* Start the GTK main loop. We will not regain control until gtk_main_quit is called. */
-  gtk_main ();
-
-  /* Free resources */
-  gst_element_set_state (data.playbin, GST_STATE_NULL);
-  gst_object_unref (data.playbin);
-  return 0;
-}
-
-
+/** EOF */

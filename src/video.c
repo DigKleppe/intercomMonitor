@@ -7,12 +7,12 @@
 
 #include <gst/gst.h>
 //#include "telefoon.h"
-#include "videoThread.h"
 #include <stdio.h>
 #include <pthread.h>
 #include <string.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include <video.h>
 
 gboolean link_elements_with_filter(GstElement *element1, GstElement *element2,
 		GstCaps *caps) {
@@ -27,41 +27,35 @@ gboolean link_elements_with_filter(GstElement *element1, GstElement *element2,
 }
 
 //gst-launch-1.0 v4l2src device=/dev/video0 ! image/jpeg,framerate=30/1,width=800,height=600 ! rtpjpegpay ! udpsink port=5001 host=192.168.2.255
-//gst-launch-1.0 videotestsrc pattern=zone-plate kx2=20 ky2=20 kt=1 ! video/x-raw,width=800,height=600 ! jpegenc ! rtpjpegpay ! udpsink port=5001 host=192.168.2.255
+//gst-launch-1.0 videotestsrc pattern=zone-plate kx2=20 ky2=20 kt=1 ! video/x-raw,width=800,height=600 ! jpegenc ! rtpjpegpay ! udpsink port=5001
 
 //gst-launch-1.0 -v udpsrc port=5001 ! application/x-rtp,encoding-name=JPEG,payload=26 ! rtpjpegdepay ! jpegdec ! videoconvert !  videoflip method=counterclockwise ! nxvideosink
 //gst-launch-1.0 -v udpsrc port=5001 ! application/x-rtp,encoding-name=JPEG,payload=26 ! rtpjpegdepay ! jpegdec ! videoconvert !  autovideosink
-
 
 int updateTextExceptionCntr;
 int setVideoExceptionCntr;
 int setVideoTextExceptionCntr;
 
-GstElement *videopipeline = NULL;
-GstElement *videoSource, *rtpjpegdepay, *jpegdec, *videoconvert, *videoflip,
-		*videosink;
-GstElement *textoverlay; // used for testscreen
+GstElement *videoPipeline[2]; // only works global??
 
-
-
-GstElement* startReceiving(int UDPport, char *pText) {
+GstStateChangeReturn startVideo(int UDPport, int idx) {
 	bool error = false;
 	GstCaps *caps;
 	GstStateChangeReturn ret;
 
-//	GstElement *videopipeline = NULL;
-//	GstElement *videoSource, *rtpjpegdepay, *jpegdec, *videoconvert, *videoflip,
-//			*videosink;
+	GstElement *videoSource, *rtpjpegdepay, *jpegdec, *videoconvert, *videoflip,
+			*videosink;
+
 //	GstElement *textoverlay; // used for testscreen
 
 //	try {
 
 	//			stopVideo();
-	videopipeline = gst_pipeline_new("videopipeline");
+	videoPipeline[idx] = gst_pipeline_new("videopipeline");
 	videoSource = gst_element_factory_make("udpsrc", "udpsrc");
 	g_object_set(videoSource, "port", UDPport, NULL);
 
-//	sprintf("video stream started port %d\n", UDPport);
+	printf("video stream started port %d\n", UDPport);
 
 	rtpjpegdepay = gst_element_factory_make("rtpjpegdepay", "rtpjpegdepay");
 	jpegdec = gst_element_factory_make("jpegdec", "jpegdec");
@@ -71,14 +65,14 @@ GstElement* startReceiving(int UDPport, char *pText) {
 
 	videosink = gst_element_factory_make("autovideosink", "autovideosink");
 
-	if (!videopipeline || !videoSource || !rtpjpegdepay || !jpegdec
+	if (!videoPipeline[idx] || !videoSource || !rtpjpegdepay || !jpegdec
 			|| !videoconvert || !videoflip || !videosink) {
 		g_printerr("Not all elements could be created.\n");
 		error = true;
 	}
 	if (!error) {
 		/* Build the pipeline */
-		gst_bin_add_many(GST_BIN(videopipeline), videoSource, rtpjpegdepay,
+		gst_bin_add_many(GST_BIN(videoPipeline[idx]), videoSource, rtpjpegdepay,
 				jpegdec, videoconvert, videoflip, videosink, NULL);
 
 		caps = gst_caps_new_simple("application/x-rtp",
@@ -111,7 +105,15 @@ GstElement* startReceiving(int UDPport, char *pText) {
 			error = true;
 		}
 	}
-	return videopipeline;
-}
 
+	ret = gst_element_set_state(videoPipeline[idx], GST_STATE_PLAYING);
+
+	if (ret == GST_STATE_CHANGE_FAILURE) {
+		g_printerr(
+				" video Receive Unable to set the pipeline to the playing state.\n");
+		error = true;
+	}
+
+	return ret;
+}
 

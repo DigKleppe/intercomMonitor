@@ -12,8 +12,8 @@
 #include <stdbool.h>
 
 gboolean link_elements_with_filter (GstElement *element1, GstElement *element2, GstCaps *caps);
-GstElement * startReceiving( int UDPport, char * pText);
-
+GstStateChangeReturn startVideo( int UDPport, int idx);
+extern GstElement *videoPipeline[2]; // only works global??
 
 typedef enum {
   GST_VIDEO_FLIP_METHOD_IDENTITY,
